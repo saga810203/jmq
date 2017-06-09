@@ -3,11 +3,11 @@ package org.jfw.jmq.store.command.written;
 import java.nio.ByteBuffer;
 import java.nio.channels.CompletionHandler;
 
-public final class ReadTypeHandler implements CompletionHandler<Integer, WriteCommand>{
+public final class WritePosHandler implements CompletionHandler<Integer, WriteCommand>{
 	
-	public static final  ReadTypeHandler INS = new ReadTypeHandler();
+	public static final  WritePosHandler INS = new WritePosHandler();
 	
-	private ReadTypeHandler() {
+	private WritePosHandler() {
 	}
 
 	@Override
@@ -15,18 +15,19 @@ public final class ReadTypeHandler implements CompletionHandler<Integer, WriteCo
 		ByteBuffer buf = w.getBuf();
 		if(result>0){
 			if(!buf.hasRemaining()){
-				buf.flip();
-				w.setType(buf.getLong());
-				w.readSize();
+				w.setWritoePos(-1);
+				w.readData();
 				return;
+			}else{
+				w.incWritoePos(result);
 			}
 		}
-		w.getReader().read(buf,w,this);
+		w.getWriter().write(buf, w.getWritoePos(),w,this);
 	}
 
 	@Override
 	public void failed(Throwable exc, WriteCommand w) {
-		w.failWithRead(exc);		
+		w.failWithWirte(exc);		
 	}
 
 }

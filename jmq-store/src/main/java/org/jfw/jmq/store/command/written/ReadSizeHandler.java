@@ -17,7 +17,9 @@ public final class ReadSizeHandler implements CompletionHandler<Integer, WriteCo
 			if(!buf.hasRemaining()){
 				buf.flip();
 				w.setSize(buf.getShort());
-				w.read();
+				if(w.checkSize()){
+					w.readData();
+				}
 				return;
 			}
 		}
@@ -26,7 +28,7 @@ public final class ReadSizeHandler implements CompletionHandler<Integer, WriteCo
 
 	@Override
 	public void failed(Throwable exc, WriteCommand w) {
-		w.failWithReadSize(exc);		
+		w.failWithRead(exc);		
 	}
 
 }
