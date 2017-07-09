@@ -8,24 +8,48 @@ public class MessageIndex {
 	/*
 	 * postion in topic data store
 	 */
-	private long postion;
+	private long position;
 	/**
 	 * message type
 	 */
 	private long type;
 	private short size;
+	private long limit;
+	private long time;
+	private long nextPosition;
 	
+	
+	
+	
+	public long getNextPosition() {
+		return nextPosition;
+	}
+	public void setNextPosition(long nextPosition) {
+		this.nextPosition = nextPosition;
+	}
+	public long getTime() {
+		return time;
+	}
+	public void setTime(long time) {
+		this.time = time;
+	}
+	public long getLimit() {
+		return limit;
+	}
+	public void setLimit(long limit) {
+		this.limit = limit;
+	}
 	public long getId() {
 		return id;
 	}
 	public void setId(long id) {
 		this.id = id;
 	}
-	public long getPostion() {
-		return postion;
+	public long getPosition() {
+		return position;
 	}
-	public void setPostion(long postion) {
-		this.postion = postion;
+	public void setPosition(long position) {
+		this.position = position;
 	}
 	public long getType() {
 		return type;

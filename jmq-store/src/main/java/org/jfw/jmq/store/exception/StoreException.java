@@ -1,7 +1,12 @@
 package org.jfw.jmq.store.exception;
 
 public class StoreException extends Exception{
-	public static final int BASE_ERROR_CODE = 0;
+	public static final int BASE_ERROR_CODE = 90000;
+	
+	/**
+	 * great than TopicConfig.maxSurvivalTime
+	 */
+	public static final int TEMP_MESSAGE_TIMEOUT=90001;
 	
 	private int code;
 
