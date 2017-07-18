@@ -9,4 +9,10 @@ public class BufferFactory {
 	public void freeBuffer(ByteBuffer buf){
 		
 	}
+	public void freeBuffer(Iterable<ByteBuffer> buffers){
+		for(ByteBuffer b:buffers){
+			this.freeBuffer(b);
+		}
+		
+	}
 }

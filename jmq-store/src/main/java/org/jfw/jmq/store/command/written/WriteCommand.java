@@ -170,16 +170,16 @@ public class WriteCommand implements Command {
 	}
 
 	private void allocate() {
-		if (this.position == -1) {
-			this.position = this.topic.allocate(( this.chunked ? rsize + 8 : rsize)+2);
-			if (position == -1) {
-				this.failWithAllocate();
-			} else {
-				if (-1 == this.startIdx) {
-					this.startIdx = position;
-				}
-			}
-		}
+//		if (this.position == -1) {
+//			this.position = this.topic.allocate(( this.chunked ? rsize + 8 : rsize)+2);
+//			if (position == -1) {
+//				this.failWithAllocate();
+//			} else {
+//				if (-1 == this.startIdx) {
+//					this.startIdx = position;
+//				}
+//			}
+//		}
 	}
 
 	public void readData() {

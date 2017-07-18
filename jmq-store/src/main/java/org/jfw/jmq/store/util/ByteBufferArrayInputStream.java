@@ -4,13 +4,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 
-public class ArrayBufferInputStream extends InputStream {
+public class ByteBufferArrayInputStream extends InputStream {
 	private long remaining;
 	private final ByteBuffer[] bs;
 	private int idx;
 	private BufferFactory bf;
 
-	public ArrayBufferInputStream(ByteBuffer[] bs, BufferFactory bf) {
+	public ByteBufferArrayInputStream(ByteBuffer[] bs, BufferFactory bf) {
 		this.bf = bf;
 		this.idx = 0;
 		this.bs = bs;
@@ -106,5 +106,4 @@ public class ArrayBufferInputStream extends InputStream {
 		}
 		return -1;
 	}
-
 }

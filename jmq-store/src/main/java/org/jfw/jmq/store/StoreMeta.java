@@ -17,8 +17,8 @@ public class StoreMeta {
 	}
 	private long time;
 	private Map<String,TopicMeta> topics = new HashMap<String,TopicMeta>(); 
-	private long capacity;
-	private long position;
+	private int capacity;
+	private int position;
 	
 	public StoreMeta(){
 		this.time=0;
@@ -38,17 +38,17 @@ public class StoreMeta {
 	public void setTopics(Map<String, TopicMeta> topics) {
 		this.topics = topics;
 	}
-	public long getCapacity() {
+	public int getCapacity() {
 		return capacity;
 	}
-	public void setCapacity(long capacity) {
+	public void setCapacity(int capacity) {
 		this.capacity = capacity;
 	}
 
-	public long getPosition() {
+	public int getPosition() {
 		return position;
 	}
-	public void setPosition(long position) {
+	public void setPosition(int position) {
 		this.position = position;
 	}
 	

@@ -17,8 +17,6 @@ public class CheckPointThread extends Thread{
 	
 	
 	
-	public static StoreMeta read(File file) throws Exception{
-		
-	}
+
 
 }
