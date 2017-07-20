@@ -4,7 +4,10 @@ import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.AsynchronousFileChannel;
+import java.util.List;
 import java.util.Random;
+import java.util.concurrent.ExecutionException;
 import java.util.zip.Adler32;
 
 public final class IOHelper {
@@ -32,6 +35,21 @@ public final class IOHelper {
 			} catch (IOException e) {
 			}
 		}
+	}
+	
+	
+	public static void store(AsynchronousFileChannel ch,List<ByteBuffer> buffers,long position) throws InterruptedException, ExecutionException, IOException{
+		int idx   = 0;
+		while(idx<buffers.size()){
+			ByteBuffer buf = buffers.get(idx);
+			if(buf.hasRemaining()){
+				int ret = ch.write(buf, position).get();
+				position+=ret;
+			}else{
+				++idx;
+			}
+		}
+		ch.force(false);
 	}
 
 	
