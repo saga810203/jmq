@@ -8,6 +8,12 @@ public class StoreException extends Exception{
 	 */
 	public static final int TEMP_MESSAGE_TIMEOUT=90001;
 	
+	
+	public static final int STORE_IS_SHUTDOWN = 90101;
+	public static final int WRITE_RODO_ERROR = 90102;
+	public static final int READ_RODO_ERROR = 90103;
+	
+	
 	private int code;
 
 	public int getCode() {

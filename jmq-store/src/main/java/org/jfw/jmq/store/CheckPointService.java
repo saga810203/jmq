@@ -65,7 +65,7 @@ public class CheckPointService{
 		
 	}
 	
-	public void checkPoint() throws Exception{
+	public void reStore() throws Exception{
 		
 		
 		this.store(true);

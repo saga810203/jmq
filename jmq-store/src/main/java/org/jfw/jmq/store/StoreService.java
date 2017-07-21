@@ -22,14 +22,11 @@ public class StoreService extends LockFile {
 	// @SuppressWarnings({"unchecked", "rawtypes"}) // generic array
 	// construction
 	public static final FileAttribute<?>[] FILE_NO_ATTRIBUTES = new FileAttribute[0];
-	
+
 	public static final Adler32 checkPointChecksum = new Adler32();
 	public static final Adler32 redoChecksum = new Adler32();
-	
 
-	
-	synchronized public void start(StoreConfig config, File base, ExecutorService executor, BufferFactory bf)
-			throws Exception {
+	synchronized public void start(StoreConfig config, File base, ExecutorService executor, BufferFactory bf) throws Exception {
 		this.config = config;
 		this.executor = executor;
 		this.base = base;
@@ -47,22 +44,16 @@ public class StoreService extends LockFile {
 	}
 
 	protected void init() throws Exception {
-		this.rds.init(this, base, executor);
+		this.rds.init(this, base, executor, 64 * 1024 * 4024);
 		this.cps.init(base, executor, bf, rds);
-		if(!this.cps.readStoreMeta()){
-			this.rds.recover();
-			this.cps.checkPoint();
+		if (!this.cps.readStoreMeta()) {
+			this.cps.apply(this);
+			this.rds.recover(this.cps.getMeta().getPosition(), this.cps.getMeta().getRedoTime());
+			this.cps.reStore();
+		} else {
+			this.cps.apply(this);
 		}
-		this.cps.apply(this);
 	}
-	
-
-	
-
-
-
-
-
 
 	// private boolean started =false;
 
@@ -71,11 +62,6 @@ public class StoreService extends LockFile {
 	private ExecutorService executor;
 	private File base;
 
-
-	
-
-	
-	
 	private CheckPointService cps = new CheckPointService();
 	private RedoService rds = new RedoService();
 
@@ -83,10 +69,8 @@ public class StoreService extends LockFile {
 		return base;
 	}
 
-	
 	private static final Logger log = LogFactory.getLog(StoreService.class);
-	
-	
+
 	static {
 		FILE_OPEN_OPTIONS = new HashSet<OpenOption>(3);
 		FILE_OPEN_OPTIONS.add(StandardOpenOption.CREATE);

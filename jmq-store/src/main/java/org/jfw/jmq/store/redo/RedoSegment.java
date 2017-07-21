@@ -6,18 +6,20 @@ import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousFileChannel;
 import java.util.ArrayList;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.zip.Adler32;
 
 import org.jfw.jmq.store.command.Command;
 import org.jfw.jmq.store.util.BufferFactory;
 import org.jfw.jmq.store.util.OutputFileSegment;
 
-public class RedoSegment{
+public abstract class RedoSegment implements Runnable{
 
 	private ArrayList<Command> cmds = new ArrayList<Command>();
 	private long position;
 	private long limit;
 	
+	private Throwable thr;
 	
 	private Runnable runner;
 
@@ -50,14 +52,23 @@ public class RedoSegment{
 	public void setLimit(long limit) {
 		this.limit = limit;
 	}
-
-
 	public Runnable getRunner() {
 		return runner;
 	}
-
-
 	public void setRunner(Runnable runner) {
 		this.runner = runner;
 	}
+	public void success(ExecutorService executor){
+		this.thr = null;
+        executor.submit(this);		
+	}
+	public void fail(Throwable thr,ExecutorService executor){
+		this.thr = thr;
+        executor.submit(this);
+	}
+	
+	public boolean isSucces(){
+		return null == thr;
+	}
+
 }

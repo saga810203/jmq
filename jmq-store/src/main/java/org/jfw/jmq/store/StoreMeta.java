@@ -13,6 +13,7 @@ public class StoreMeta {
 	private Map<String, TopicMeta> topics = new HashMap<String, TopicMeta>();
 	private int capacity;
 	private int position;
+	private long redoTime;
 	private boolean clean;
 
 	public StoreMeta() {
@@ -68,6 +69,14 @@ public class StoreMeta {
 	}
 	public void decTime(){
 		--this.time;
+	}
+
+	public long getRedoTime() {
+		return redoTime;
+	}
+
+	public void setRedoTime(long redoTime) {
+		this.redoTime = redoTime;
 	}
 
 }
