@@ -11,6 +11,7 @@ import java.util.zip.Adler32;
 
 import org.jfw.jmq.log.LogFactory;
 import org.jfw.jmq.log.Logger;
+import org.jfw.jmq.store.checkpoint.CheckPointService;
 import org.jfw.jmq.store.config.StoreConfig;
 import org.jfw.jmq.store.redo.RedoService;
 import org.jfw.jmq.store.util.BufferFactory;
@@ -45,7 +46,7 @@ public class StoreService extends LockFile {
 
 	protected void init() throws Exception {
 		this.rds.init(this, base, executor, 64 * 1024 * 4024);
-		this.cps.init(base, executor, bf, rds);
+		this.cps.init(this,base, executor, bf, rds,32*1024*1024);
 		if (!this.cps.readStoreMeta()) {
 			this.cps.apply(this);
 			this.rds.recover(this.cps.getMeta().getPosition(), this.cps.getMeta().getRedoTime());

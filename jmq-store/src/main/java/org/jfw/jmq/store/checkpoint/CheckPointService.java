@@ -1,4 +1,4 @@
-package org.jfw.jmq.store;
+package org.jfw.jmq.store.checkpoint;
 
 import java.io.File;
 import java.io.IOException;
@@ -6,12 +6,17 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.channels.AsynchronousFileChannel;
 import java.nio.charset.Charset;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.zip.Adler32;
 
 import org.jfw.jmq.log.LogFactory;
 import org.jfw.jmq.log.Logger;
+import org.jfw.jmq.store.StoreMeta;
+import org.jfw.jmq.store.StoreService;
+import org.jfw.jmq.store.command.Command;
 import org.jfw.jmq.store.redo.RedoService;
 import org.jfw.jmq.store.util.BufferFactory;
 import org.jfw.jmq.store.util.InputFileSegment;
@@ -19,7 +24,8 @@ import org.jfw.jmq.store.util.OutputFileSegment;
 
 import com.google.gson.Gson;
 
-public class CheckPointService{
+public class CheckPointService implements Runnable{
+	
 	private static final Logger log = LogFactory.getLog(CheckPointService.class);
 	
 	public static final Adler32 checkPointChecksum = new Adler32();
@@ -28,6 +34,7 @@ public class CheckPointService{
 	
 
 	private RedoService rds;
+	private StoreService ss;
 	
 	private AsynchronousFileChannel cp1;
 	private AsynchronousFileChannel cp2;
@@ -35,11 +42,21 @@ public class CheckPointService{
 	private InputFileSegment input = new InputFileSegment();
 	private OutputFileSegment output = new OutputFileSegment();
 	private BufferFactory bf;
+	private int redolimit;
+	private int redoSize;
+	private int maxRedoSize  ;
+	
+	private boolean running = false;
+	private CountDownLatch stopLock;// = new CountDownLatch(1);
+	
+
 	
 	
-	public void init(File base, ExecutorService executor,BufferFactory bf,RedoService rds) throws IOException{
+	public void init(StoreService ss,File base, ExecutorService executor,BufferFactory bf,RedoService rds,int maxRedoSize) throws IOException{
+		this.ss =ss;
 		this.bf = bf;
 		this.rds = rds;
+		this.maxRedoSize = maxRedoSize;
 		this.cp1 = AsynchronousFileChannel.open(new File(base, "mq.cp1").toPath(), StoreService.FILE_OPEN_OPTIONS,
 				executor, StoreService.FILE_NO_ATTRIBUTES);
 		this.cp2 = AsynchronousFileChannel.open(new File(base, "mq.cp2").toPath(), StoreService.FILE_OPEN_OPTIONS,
@@ -65,13 +82,59 @@ public class CheckPointService{
 		
 	}
 	
-	public void reStore() throws Exception{
-		
-		
-		this.store(true);
+	
+	public void checkpoint(CheckPointSegment cps){
+		for(Command cmd:cps.getCmds()){
+			cmd.store(ss);
+		}
+		for(Command cmd:cps.getCmds()){
+			cmd.apply(meta);
+		}
+		this.meta.setPosition(cps.getLimit());
+		this.meta.setRedoTime(cps.getTime());
+		this.redolimit = cps.getPosition();
+		this.redoSize+=cps.getSize();
 	}
 	
-	public void start(){}
+	public void reStore() throws Exception{
+		CheckPointSegment cps = null;
+		while((cps = rds.pollCheckPointSegment())!=null){
+			checkpoint(cps);
+		}
+		this.store(true);
+		this.rds.setLimit(this.redolimit);
+	}
+	
+	
+	@Override
+	public void run(){
+		this.running = true;
+		stopLock  = new CountDownLatch(1);
+		this.redoSize = 0;
+		CheckPointSegment cps = null;
+		while(running){
+			try {
+				cps = rds.takeCheckPointSegment();
+			} catch (InterruptedException e) {
+				break;
+			}
+			this.checkpoint(cps);
+			if(this.redoSize > this.maxRedoSize){
+				try {
+					this.store(false);
+				} catch (Exception e) {
+					log.error("checkpoint error", e);
+					break;
+				}
+				this.redoSize =0;
+				this.rds.setLimit(this.redolimit);
+			}
+		}
+	}
+	public void start(){
+		
+		
+	}
 	public void stop(){}
 	
 	

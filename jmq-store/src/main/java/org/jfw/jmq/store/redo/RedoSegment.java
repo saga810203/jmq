@@ -1,17 +1,9 @@
 package org.jfw.jmq.store.redo;
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.ByteBuffer;
-import java.nio.channels.AsynchronousFileChannel;
 import java.util.ArrayList;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.zip.Adler32;
 
 import org.jfw.jmq.store.command.Command;
-import org.jfw.jmq.store.util.BufferFactory;
-import org.jfw.jmq.store.util.OutputFileSegment;
 
 public abstract class RedoSegment implements Runnable{
 

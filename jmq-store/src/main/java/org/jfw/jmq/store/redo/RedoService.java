@@ -6,10 +6,9 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
 import java.util.ArrayList;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.zip.Adler32;
 
 import org.jfw.jmq.store.StoreService;
@@ -27,8 +26,8 @@ public class RedoService implements Runnable {
 	private FileChannel channel;
 	private MappedByteBuffer buffer;
 	private ExecutorService executor;
-	private Queue<RedoSegment> queue = new ConcurrentLinkedQueue<RedoSegment>();
-	private Queue<CheckPointSegment> cqueue = new ConcurrentLinkedQueue<CheckPointSegment>();
+	private LinkedBlockingQueue<RedoSegment> queue = new LinkedBlockingQueue<RedoSegment>();
+	private LinkedBlockingQueue<CheckPointSegment> cqueue = new LinkedBlockingQueue<CheckPointSegment>();
 
 	private RedoSegment crs;
 	private boolean reClac;
@@ -38,6 +37,7 @@ public class RedoService implements Runnable {
 	private int position;
 
 	private int nextPosition;
+	private int segmentSize;
 
 	private long time;
 	
@@ -56,22 +56,38 @@ public class RedoService implements Runnable {
 	}
 
 
+	public void setLimit(int limit){
+		this.limit = limit;
+	}
 	
-	private void clacPosition(){
-		this.cmds = crs.getCmds();
-		int  segLen=24;// 4+8+4+8;  // segLength, checksum,segPos,time
-		for(Command cmd :this.cmds){
-			segLen=+cmd.getRedoSize();
-		}
-		nextPosition = this.position+segLen;
-		if(nextPosition >this.capacity){
-			position = 0;
-			nextPosition = segLen;
+	private void takeRedoSegment() throws InterruptedException{
+		if(null == this.crs){
+			this.crs = this.queue.take();
+			this.cmds = crs.getCmds();
+			this.segmentSize=24;// 4+8+4+8;  // segLength, checksum,segPos,time
+			for(Command cmd :this.cmds){
+				this.segmentSize=+cmd.getRedoSize();
+			}
+			nextPosition = this.position+this.segmentSize;			
 		}
 	}
 	private boolean hasSpace(){
 		int climit = this.limit;
-		return (climit >= nextPosition) || ( nextPosition > climit && position > climit);
+		
+		if(this.nextPosition > this.capacity){
+			if(this.position<=climit){
+				return false;
+			}
+			if(climit < this.segmentSize){
+				return false;
+			}
+			int  nss = this.capacity - this.position + this.segmentSize;
+			this.position = 0;
+			this.nextPosition = this.segmentSize;
+			this.segmentSize = nss;
+			return true;
+		}
+		return climit >= this.nextPosition;
 	}
 	
 	private void flush() throws Exception{
@@ -96,6 +112,8 @@ public class RedoService implements Runnable {
 	}
 	
 
+
+	
 	@Override
 	public void run() {
 		this.buffer.clear();
@@ -105,40 +123,32 @@ public class RedoService implements Runnable {
 		this.cqueue.clear();
 		this.stopLock = new CountDownLatch(1);
 		this.running = true;
+		this.time = 1;
 		
 		reClac = true;
 		while (running) {
-			if (this.crs == null) {
-				this.crs = this.queue.poll();
-				reClac = true;
+			try {
+				this.takeRedoSegment();
+			} catch (InterruptedException e1) {
+				if(!running){
+					break;
+				}
 			}
-			if (this.crs != null) {
-				if(reClac){
-					clacPosition();
-					reClac = false;
-				}
-				if(this.hasSpace()){
-					try {
-						this.flush();
-					} catch (Exception e) {
-						this.crs.fail(new StoreException(StoreException.WRITE_RODO_ERROR, e), executor);
-						this.crs = null;
-						break;
-					}
-					for(Command cmd:this.cmds){
-						cmd.afterCommit(ss);
-					}
-					this.cqueue.add(new CheckPointSegment(cmds, position,nextPosition,time));
-					++this.time;
-					this.position = nextPosition;
-					this.crs = this.queue.poll();
-					this.reClac = true;
-				}
-			} else {
+			if(this.hasSpace()){
 				try {
-					Thread.sleep(100);
-				} catch (InterruptedException e) {
+					this.flush();
+				} catch (Exception e) {
+					this.crs.fail(new StoreException(StoreException.WRITE_RODO_ERROR, e), executor);
+					this.crs = null;
+					break;
 				}
+				for(Command cmd:this.cmds){
+					cmd.afterCommit(ss);
+				}
+				++this.time;				
+				this.cqueue.add(new CheckPointSegment(cmds, position,nextPosition,segmentSize,time));
+				this.position = nextPosition;
+				this.crs = null;
 			}
 		}
 		this.clean();
@@ -178,7 +188,7 @@ public class RedoService implements Runnable {
 		}
 	}
 	
-	private int readSegment(int pos,long time){
+	private int readSegment(int pos,long ntime){
 		int dpos = pos+24;
 		if(dpos>=this.capacity){
 			return -1;
@@ -197,7 +207,7 @@ public class RedoService implements Runnable {
 		if(pos!= this.buffer.getInt()){
 			return -1;
 		}
-		if(time != this.buffer.getLong()){
+		if(ntime != this.buffer.getLong()){
 			return -1; 
 		}
 		this.buffer.position(pos+12);
@@ -220,9 +230,9 @@ public class RedoService implements Runnable {
 				return -1;
 			}
 		}
-		this.cqueue.add(new CheckPointSegment(rcmds, pos,npos, time));
+		++ntime;
+		this.cqueue.add(new CheckPointSegment(rcmds, pos,npos,1, ntime));
 		return npos;
-		
 	}
 	
 	private int readCmd(int pos,ArrayList<Command> ret){
@@ -242,6 +252,17 @@ public class RedoService implements Runnable {
 		return -1;
 	}
 	
+	
+	public CheckPointSegment pollCheckPointSegment(){
+		return this.cqueue.poll();
+	}
+	public CheckPointSegment takeCheckPointSegment() throws InterruptedException{
+		return this.cqueue.take();
+	}
+	
+	public void addRedoSegment(RedoSegment redosegment){
+		this.queue.add(redosegment);
+	}
 
 	public void start() {
 	}
@@ -253,6 +274,4 @@ public class RedoService implements Runnable {
 		} catch (InterruptedException e) {
 		}
 	}
-
-
 }
