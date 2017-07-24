@@ -19,23 +19,23 @@ import org.jfw.jmq.store.StoreService;
 import org.jfw.jmq.store.command.Command;
 import org.jfw.jmq.store.redo.RedoService;
 import org.jfw.jmq.store.util.BufferFactory;
+import org.jfw.jmq.store.util.IOHelper;
 import org.jfw.jmq.store.util.InputFileSegment;
 import org.jfw.jmq.store.util.OutputFileSegment;
 
 import com.google.gson.Gson;
 
-public class CheckPointService implements Runnable{
-	
+public class CheckPointService implements Runnable {
+
 	private static final Logger log = LogFactory.getLog(CheckPointService.class);
-	
+
 	public static final Adler32 checkPointChecksum = new Adler32();
 	public static final Gson gson = new Gson();
 	public static final Charset UTF8 = Charset.forName("UTF-8");
-	
 
 	private RedoService rds;
 	private StoreService ss;
-	
+
 	private AsynchronousFileChannel cp1;
 	private AsynchronousFileChannel cp2;
 	private StoreMeta meta;
@@ -44,144 +44,164 @@ public class CheckPointService implements Runnable{
 	private BufferFactory bf;
 	private int redolimit;
 	private int redoSize;
-	private int maxRedoSize  ;
-	
+	private int maxRedoSize;
+
 	private boolean running = false;
 	private CountDownLatch stopLock;// = new CountDownLatch(1);
-	
 
-	
-	
-	public void init(StoreService ss,File base, ExecutorService executor,BufferFactory bf,RedoService rds,int maxRedoSize) throws IOException{
-		this.ss =ss;
-		this.bf = bf;
-		this.rds = rds;
-		this.maxRedoSize = maxRedoSize;
-		this.cp1 = AsynchronousFileChannel.open(new File(base, "mq.cp1").toPath(), StoreService.FILE_OPEN_OPTIONS,
-				executor, StoreService.FILE_NO_ATTRIBUTES);
-		this.cp2 = AsynchronousFileChannel.open(new File(base, "mq.cp2").toPath(), StoreService.FILE_OPEN_OPTIONS,
-				executor, StoreService.FILE_NO_ATTRIBUTES);
+	private Thread thread = null;
+
+	public synchronized void init(StoreService ss, File base, ExecutorService executor, BufferFactory bf, RedoService rds, int maxRedoSize) throws IOException {
+		if (this.ss == null) {
+
+			this.cp1 = AsynchronousFileChannel.open(new File(base, "mq.cp1").toPath(), StoreService.FILE_OPEN_OPTIONS, executor,
+					StoreService.FILE_NO_ATTRIBUTES);
+			try{
+			this.cp2 = AsynchronousFileChannel.open(new File(base, "mq.cp2").toPath(), StoreService.FILE_OPEN_OPTIONS, executor,
+					StoreService.FILE_NO_ATTRIBUTES);
+			}catch(IOException e){
+				IOHelper.close(cp1);
+				throw e;
+			}
+			this.ss = ss;
+			this.bf = bf;
+			this.rds = rds;
+			this.maxRedoSize = maxRedoSize;
+		}
 	}
 	
+	public synchronized void unInit(){
+		if(this.ss!=null){
+			IOHelper.close(cp1);
+			IOHelper.close(cp2);
+			this.ss = null;
+			this.rds = null;
+		}
+	}
 
-	
-	public boolean readStoreMeta() throws InterruptedException, ExecutionException{
+	public boolean readStoreMeta() throws InterruptedException, ExecutionException {
 		this.meta = this.read(this.cp1);
-		StoreMeta meta2 = this.read(this.cp2);		
-		if(meta.getTime() < meta2.getTime()){
-			 meta =meta2;
+		StoreMeta meta2 = this.read(this.cp2);
+		if (meta.getTime() < meta2.getTime()) {
+			meta = meta2;
 		}
 		return meta.isClean();
 	}
-	
-	public StoreMeta getMeta(){
+
+	public StoreMeta getMeta() {
 		return meta;
 	}
-	
-	public void apply(StoreService storeService){
-		
+
+	public void apply(StoreService storeService) {
+
 	}
-	
-	
-	public void checkpoint(CheckPointSegment cps){
-		for(Command cmd:cps.getCmds()){
+
+	public void checkpoint(CheckPointSegment cps) {
+		for (Command cmd : cps.getCmds()) {
 			cmd.store(ss);
 		}
-		for(Command cmd:cps.getCmds()){
+		for (Command cmd : cps.getCmds()) {
 			cmd.apply(meta);
 		}
 		this.meta.setPosition(cps.getLimit());
 		this.meta.setRedoTime(cps.getTime());
 		this.redolimit = cps.getPosition();
-		this.redoSize+=cps.getSize();
+		this.redoSize += cps.getSize();
 	}
-	
-	public void reStore() throws Exception{
+
+	public void reStore() throws Exception {
 		CheckPointSegment cps = null;
-		while((cps = rds.pollCheckPointSegment())!=null){
+		while ((cps = rds.pollCheckPointSegment()) != null) {
 			checkpoint(cps);
 		}
 		this.store(true);
 		this.rds.setLimit(this.redolimit);
 	}
-	
-	
-	@Override
-	public void run(){
+
+	private void beforeHand() {
 		this.running = true;
-		stopLock  = new CountDownLatch(1);
+		stopLock = new CountDownLatch(1);
 		this.redoSize = 0;
+	}
+
+	private void hand() {
 		CheckPointSegment cps = null;
-		while(running){
+		while (running) {
 			try {
 				cps = rds.takeCheckPointSegment();
 			} catch (InterruptedException e) {
 				break;
 			}
 			this.checkpoint(cps);
-			if(this.redoSize > this.maxRedoSize){
+			if (this.redoSize > this.maxRedoSize) {
 				try {
 					this.store(false);
 				} catch (Exception e) {
 					log.error("checkpoint error", e);
 					break;
 				}
-				this.redoSize =0;
+				this.redoSize = 0;
 				this.rds.setLimit(this.redolimit);
 			}
 		}
 	}
-	public void start(){
-		
+
+	private void clean(){
 		
 	}
-	public void stop(){}
 	
-	
-	
-	
-	
-	private void store(boolean clean) throws Exception{
+	@Override
+	public void run() {
+		this.beforeHand();
+		this.hand();
+		this.clean();
+	}
+
+	public synchronized void start() {
+		if(null!= this.ss){
+			
+		}
+	}
+
+	public void stop() {
+		
+	}
+
+	private void store(boolean clean) throws Exception {
 		this.output.reset(bf);
-		try{
+		try {
 			this.meta.incTime();
 			this.meta.setClean(clean);
-			gson.toJson(this.meta,new OutputStreamWriter(output, UTF8));
-			AsynchronousFileChannel ch = ((this.meta.getTime() & 1) == 0)?cp2:cp1;
-			this.output.flushToFile(ch, checkPointChecksum,0,false);	
-		}catch(Exception e){
+			gson.toJson(this.meta, new OutputStreamWriter(output, UTF8));
+			AsynchronousFileChannel ch = ((this.meta.getTime() & 1) == 0) ? cp2 : cp1;
+			this.output.flushToFile(ch, checkPointChecksum, 0, false);
+		} catch (Exception e) {
 			this.meta.decTime();
 			throw e;
-		}
-		finally{
+		} finally {
 			output.reset(bf);
 		}
 	}
-	
-	
-	
+
 	private StoreMeta read(AsynchronousFileChannel channel) throws InterruptedException, ExecutionException {
-		this.input.reset(bf, channel,0);
-		int ret =this.input.load(checkPointChecksum);
+		this.input.reset(bf, channel, 0);
+		int ret = this.input.load(checkPointChecksum);
 		StoreMeta meta = null;
-		if(ret>0){
-			try{
-				meta = gson.fromJson(new InputStreamReader(input, UTF8),StoreMeta.class);
-			}catch(Exception e){
+		if (ret > 0) {
+			try {
+				meta = gson.fromJson(new InputStreamReader(input, UTF8), StoreMeta.class);
+			} catch (Exception e) {
 				log.warn("read checkpoint error,reason:parse error", e);
-			}finally{
+			} finally {
 				input.freeBuffer();
 			}
-		}else{
+		} else {
 			log.warn("read checkpoint error,reason:read bytes");
 		}
-		if(null == meta){
+		if (null == meta) {
 			meta = new StoreMeta();
 		}
 		return meta;
 	}
-	
-	
-
 
 }
