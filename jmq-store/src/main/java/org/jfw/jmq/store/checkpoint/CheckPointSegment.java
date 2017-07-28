@@ -11,6 +11,7 @@ public class CheckPointSegment {
 	private int size;
 	private ArrayList<Command> cmds;
 
+	@SuppressWarnings("unchecked")
 	public CheckPointSegment(ArrayList<Command> cmds, int position, int limit,int size, long time) {
 		this.cmds = ((ArrayList<Command>) cmds.clone());
 		this.position = position;

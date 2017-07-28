@@ -53,17 +53,13 @@ public class RedoService implements Runnable {
 			this.ss = ss;
 			this.executor = executor;
 			this.capacity = capacity;
-			// this.buffer.load();
 		}
 	}
 
 	public synchronized void unInit() {
 		if (ss == null)
 			return;
-		if (running)
-			return;
-		if (null != thread)
-			return;
+		this.stop();
 		try {
 			this.channel.close();
 		} catch (IOException e) {
@@ -158,6 +154,7 @@ public class RedoService implements Runnable {
 				for (Command cmd : this.cmds) {
 					cmd.afterCommit(ss);
 				}
+				this.crs.success(executor);
 				++this.time;
 				this.cqueue.add(new CheckPointSegment(cmds, position, nextPosition, segmentSize, time));
 				this.position = nextPosition;

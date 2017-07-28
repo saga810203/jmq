@@ -6,7 +6,6 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.channels.AsynchronousFileChannel;
 import java.nio.charset.Charset;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -45,6 +44,9 @@ public class CheckPointService implements Runnable {
 	private int redolimit;
 	private int redoSize;
 	private int maxRedoSize;
+	private long lastRedoTime = -1;
+
+	private CheckPointSegment cps;
 
 	private boolean running = false;
 	private CountDownLatch stopLock;// = new CountDownLatch(1);
@@ -56,10 +58,10 @@ public class CheckPointService implements Runnable {
 
 			this.cp1 = AsynchronousFileChannel.open(new File(base, "mq.cp1").toPath(), StoreService.FILE_OPEN_OPTIONS, executor,
 					StoreService.FILE_NO_ATTRIBUTES);
-			try{
-			this.cp2 = AsynchronousFileChannel.open(new File(base, "mq.cp2").toPath(), StoreService.FILE_OPEN_OPTIONS, executor,
-					StoreService.FILE_NO_ATTRIBUTES);
-			}catch(IOException e){
+			try {
+				this.cp2 = AsynchronousFileChannel.open(new File(base, "mq.cp2").toPath(), StoreService.FILE_OPEN_OPTIONS, executor,
+						StoreService.FILE_NO_ATTRIBUTES);
+			} catch (IOException e) {
 				IOHelper.close(cp1);
 				throw e;
 			}
@@ -69,9 +71,10 @@ public class CheckPointService implements Runnable {
 			this.maxRedoSize = maxRedoSize;
 		}
 	}
-	
-	public synchronized void unInit(){
-		if(this.ss!=null){
+
+	public synchronized void unInit() {
+		this.stop();
+		if (this.ss != null) {
 			IOHelper.close(cp1);
 			IOHelper.close(cp2);
 			this.ss = null;
@@ -96,7 +99,7 @@ public class CheckPointService implements Runnable {
 
 	}
 
-	public void checkpoint(CheckPointSegment cps) {
+	public void doCheckpoint() {
 		for (Command cmd : cps.getCmds()) {
 			cmd.store(ss);
 		}
@@ -110,9 +113,8 @@ public class CheckPointService implements Runnable {
 	}
 
 	public void reStore() throws Exception {
-		CheckPointSegment cps = null;
 		while ((cps = rds.pollCheckPointSegment()) != null) {
-			checkpoint(cps);
+			doCheckpoint();
 		}
 		this.store(true);
 		this.rds.setLimit(this.redolimit);
@@ -125,31 +127,45 @@ public class CheckPointService implements Runnable {
 	}
 
 	private void hand() {
-		CheckPointSegment cps = null;
 		while (running) {
 			try {
 				cps = rds.takeCheckPointSegment();
 			} catch (InterruptedException e) {
-				break;
+				continue;
 			}
-			this.checkpoint(cps);
-			if (this.redoSize > this.maxRedoSize) {
-				try {
-					this.store(false);
-				} catch (Exception e) {
-					log.error("checkpoint error", e);
-					break;
+			long lrt = cps.getTime();
+			if (this.lastRedoTime != lrt) {
+				doCheckpoint();
+				this.lastRedoTime = lrt;
+				if (this.redoSize > this.maxRedoSize) {
+					try {
+						this.store(false);
+					} catch (Exception e) {
+						log.error("checkpoint error", e);
+						break;
+					}
+					this.redoSize = 0;
+					this.rds.setLimit(this.redolimit);
 				}
-				this.redoSize = 0;
-				this.rds.setLimit(this.redolimit);
 			}
 		}
 	}
 
-	private void clean(){
-		
+	private void clean() {
+		if (null != this.cps && this.cps.getTime() != this.lastRedoTime) {
+			doCheckpoint();
+		}
+		while ((cps = rds.pollCheckPointSegment()) != null) {
+			doCheckpoint();
+		}
+		try {
+			this.store(true);
+		} catch (Exception e) {
+			log.error("checkpoint error", e);
+		}
+		this.stopLock.countDown();
 	}
-	
+
 	@Override
 	public void run() {
 		this.beforeHand();
@@ -158,13 +174,26 @@ public class CheckPointService implements Runnable {
 	}
 
 	public synchronized void start() {
-		if(null!= this.ss){
-			
+		if (null == this.ss) {
+			return;
 		}
+		if (null != thread) {
+			return;
+		}
+		thread = new Thread(this);
+		thread.start();
 	}
 
 	public void stop() {
-		
+		if (null != thread) {
+			this.running = false;
+			thread.interrupt();
+			thread = null;
+			try {
+				this.stopLock.await();
+			} catch (InterruptedException e) {
+			}
+		}
 	}
 
 	private void store(boolean clean) throws Exception {

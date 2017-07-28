@@ -6,8 +6,8 @@ import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileAttribute;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.zip.Adler32;
 
 import org.jfw.jmq.log.LogFactory;
 import org.jfw.jmq.log.Logger;
@@ -24,36 +24,63 @@ public class StoreService extends LockFile {
 	// construction
 	public static final FileAttribute<?>[] FILE_NO_ATTRIBUTES = new FileAttribute[0];
 
-	public static final Adler32 checkPointChecksum = new Adler32();
-	public static final Adler32 redoChecksum = new Adler32();
+	
+	private volatile CountDownLatch stopLock = null;
 
 	synchronized public void start(StoreConfig config, File base, ExecutorService executor, BufferFactory bf) throws Exception {
 		this.config = config;
 		this.executor = executor;
 		this.base = base;
 		this.bf = bf;
-		IOHelper.mkdirs(base);
-		this.lock();
-		this.init();
-		this.rds.start();
-		this.cps.start();
+		try {
+			IOHelper.mkdirs(base);
+			this.lock();
+			this.init();
+			this.rds.start();
+			this.cps.start();
+		} catch (Exception e) {
+			this.rds.stop();
+			this.cps.stop();
+			this.unInit();
+			this.unlock();
+			throw e;
+		}
+		this.stopLock = new CountDownLatch(1);		
 	}
 
 	synchronized public void stop() {
-
+		if(null!= this.stopLock){
+			try {
+				stopLock.await();
+			} catch (InterruptedException e) {
+			}
+			this.stopLock = null;
+		}
+		this.unInit();
 		this.unlock();
 	}
 
 	protected void init() throws Exception {
-		this.rds.init(this, base, executor, 64 * 1024 * 4024);
-		this.cps.init(this,base, executor, bf, rds,32*1024*1024);
-		if (!this.cps.readStoreMeta()) {
-			this.cps.apply(this);
-			this.rds.recover(this.cps.getMeta().getPosition(), this.cps.getMeta().getRedoTime());
-			this.cps.reStore();
-		} else {
-			this.cps.apply(this);
+		try {
+			this.rds.init(this, base, executor, 64 * 1024 * 4024);
+			this.cps.init(this, base, executor, bf, rds, 32 * 1024 * 1024);
+			if (!this.cps.readStoreMeta()) {
+				this.cps.apply(this);
+				this.rds.recover(this.cps.getMeta().getPosition(), this.cps.getMeta().getRedoTime());
+				this.cps.reStore();
+			} else {
+				this.cps.apply(this);
+			}
+		} catch (Exception e) {
+			this.cps.unInit();
+			this.rds.unInit();
+			throw e;
 		}
+	}
+
+	protected void unInit() {
+		this.cps.unInit();
+		this.rds.unInit();
 	}
 
 	// private boolean started =false;
